@@ -1,0 +1,15 @@
+{
+  "boundary_modules": ["stripe", "sendgrid"],
+  "public_api_exports": ["src/index.ts"],
+  "internal_paths": ["src/services/**"],
+  "lint": {
+    "rules": {
+      "no-internal-mocks": "error",
+      "no-skipped-tests": "error",
+      "no-assertionless-tests": "error",
+      "public-interface-only": "error",
+      "test-per-export": "warn",
+      "no-implementation-coupling": "warn"
+    }
+  }
+}

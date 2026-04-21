@@ -1,0 +1,36 @@
+{
+  "name": "tdd-guard",
+  "version": "0.1.0",
+  "description": "Test quality enforcement CLI — static analysis, agent-spec bridge, mutation testing wrapper",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "tdd-guard": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "npx tsx src/cli.ts",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "@babel/types": "^7.26.0",
+    "commander": "^12.0.0",
+    "glob": "^10.0.0",
+    "tiny-glob": "^0.2.9"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
