@@ -1,5 +1,7 @@
 # tdd-guard
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Test quality enforcement for codebases where you care whether tests are actually trustworthy.
 
 `tdd-guard` is a standalone CLI. It scans your source and test files, then fails on common weak-test patterns: skipped tests, assertionless tests, internal mocks, tests that import private implementation paths, and implementation-coupled assertions.
@@ -7,25 +9,37 @@ Test quality enforcement for codebases where you care whether tests are actually
 It can be used in two ways:
 
 - **Standalone** in any JavaScript/TypeScript, Rust, or Python project.
-- **As part of pi-workflows**, where it becomes one of the mechanical contract-gate checks.
+- **As part of pi-workflows**, where it becomes one of the mechanical contract-gate checks via `agent-spec --layers tdd-guard`.
 
 You do not need to know or use agent-spec to use the main `lint` command.
 
 ## Install
 
-From npm:
+### Global install (recommended for pi-workflows)
+
+From GitHub:
 
 ```bash
-npm install --save-dev tdd-guard
-npx tdd-guard lint
+npm install -g github:yagaltd/tdd-guard
 ```
 
-From this repository while developing locally:
+Or clone and link for a stable install:
 
 ```bash
-npm ci
-npm run build
-node dist/cli.js lint
+git clone https://github.com/yagaltd/tdd-guard.git ~/code/tdd-guard
+cd ~/code/tdd-guard && npm install && npm link
+```
+
+### Per-project install
+
+```bash
+npm install --save-dev github:yagaltd/tdd-guard
+```
+
+Then run:
+
+```bash
+npx tdd-guard lint
 ```
 
 ## Quick Start
@@ -232,28 +246,26 @@ For CI:
 
 ## Using With pi-workflows
 
-`pi-workflows` uses `tdd-guard` during its ContractGate.
+[pi-workflows](https://github.com/yagaltd/pi-workflows) uses `tdd-guard` as a required contract gate, integrated through `agent-spec`'s `--layers` flag.
 
 The gate runs:
 
 ```bash
-tdd-guard lint --config .tdd-guard.json
-tdd-guard verify --spec <task-contract> --config .tdd-guard.json
+agent-spec lifecycle specs/task.spec --code . --layers lint,boundary,test,tdd-guard
 ```
 
-Resolution order inside `pi-workflows`:
-
-1. `node_modules/.bin/tdd-guard`
-2. sibling checkout at `../tdd-guard/dist/cli.js`
-3. global `tdd-guard` on `PATH`
-
-By default, `pi-workflows` fails the gate if `tdd-guard` is missing. For temporary local development only, this can be softened:
+Or standalone:
 
 ```bash
-PI_WORKFLOWS_ALLOW_MISSING_TDD_GUARD=true
+tdd-guard lint --config .tdd-guard.json
+tdd-guard verify --spec specs/task.spec --config .tdd-guard.json
 ```
 
-Use that only when you intentionally want to skip the test-quality rail.
+`tdd-guard` is a required dependency of pi-workflows. Install:
+
+```bash
+npm install -g github:yagaltd/tdd-guard
+```
 
 ## Why This Exists
 
