@@ -17,18 +17,17 @@ You do not need to know or use agent-spec to use the main `lint` command.
 
 ### Global install (recommended for pi-workflows)
 
-From GitHub:
-
-```bash
-npm install -g github:yagaltd/tdd-guard
-```
-
-Or clone and link for a stable install:
+Clone and link:
 
 ```bash
 git clone https://github.com/yagaltd/tdd-guard.git ~/code/tdd-guard
-cd ~/code/tdd-guard && npm install && npm link
+cd ~/code/tdd-guard && npm install && npm run build && npm link
 ```
+
+> **Why not `npm install -g github:yagaltd/tdd-guard`?**
+> npm's git install pipeline strips compiled output before the package is packed.
+> Since `dist/` is tracked in git but npm re-clones into a temp dir, the compiled
+> files can be lost. Clone + `npm link` avoids this entirely.
 
 ### Per-project install
 
