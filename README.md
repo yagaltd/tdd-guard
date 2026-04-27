@@ -31,14 +31,28 @@ cd ~/code/tdd-guard && npm install && npm run build && npm link
 
 ### Per-project install
 
+Add to your project's `package.json` as a local dependency:
+
 ```bash
-npm install --save-dev github:yagaltd/tdd-guard
+# Clone alongside your project
+git clone https://github.com/yagaltd/tdd-guard.git ../tdd-guard
+
+# In your project's package.json:
+# "devDependencies": { "tdd-guard": "file:../tdd-guard" }
+npm install
+```
+
+Or install globally (recommended):
+
+```bash
+git clone https://github.com/yagaltd/tdd-guard.git ~/code/tdd-guard
+cd ~/code/tdd-guard && npm install && npm run build && npm link
 ```
 
 Then run:
 
 ```bash
-npx tdd-guard lint
+tdd-guard lint
 ```
 
 ## Quick Start
@@ -46,25 +60,25 @@ npx tdd-guard lint
 Run the default lint checks:
 
 ```bash
-npx tdd-guard lint
+tdd-guard lint
 ```
 
 Use explicit source and test folders:
 
 ```bash
-npx tdd-guard lint --src src --tests tests
+tdd-guard lint --src src --tests tests
 ```
 
 Use text output for humans:
 
 ```bash
-npx tdd-guard lint --format text
+tdd-guard lint --format text
 ```
 
 Use JSON output for automation:
 
 ```bash
-npx tdd-guard lint --format json
+tdd-guard lint --format json
 ```
 
 Exit codes are simple:
@@ -123,7 +137,7 @@ Rule values can be `"error"`, `"warn"`, or `"off"`.
 Static analysis of test quality. This is the primary standalone command.
 
 ```bash
-npx tdd-guard lint \
+tdd-guard lint \
   --src src \
   --tests tests \
   --config .tdd-guard.json \
@@ -158,7 +172,7 @@ JSON output:
 Mutation testing wrapper. This command delegates to the mutation tool for your language and normalizes the result.
 
 ```bash
-npx tdd-guard mutate --src src --tests tests --threshold 60
+tdd-guard mutate --src src --tests tests --threshold 60
 ```
 
 | Language | Tool |
@@ -176,7 +190,7 @@ npm install --save-dev @stryker-mutator/core
 Use incremental mode to mutate only files changed since a git ref:
 
 ```bash
-npx tdd-guard mutate --since HEAD~1
+tdd-guard mutate --since HEAD~1
 ```
 
 ### `verify`
@@ -184,7 +198,7 @@ npx tdd-guard mutate --since HEAD~1
 Checks whether tests cover a contract/spec file. This command is optional and is mainly useful when another tool generates or maintains task specs.
 
 ```bash
-npx tdd-guard verify --spec specs/task-auth.spec --tests tests
+tdd-guard verify --spec specs/task-auth.spec --tests tests
 ```
 
 The spec format expected by `verify` is simple:
@@ -216,7 +230,7 @@ This command can be used with agent-spec-generated contracts, but it is not limi
 For a normal project, start with only `lint`:
 
 ```bash
-npx tdd-guard lint --format text
+tdd-guard lint --format text
 ```
 
 A practical local quality script:
@@ -240,7 +254,7 @@ For CI:
 ```yaml
 - run: npm ci
 - run: npm test
-- run: npx tdd-guard lint
+- run: tdd-guard lint
 ```
 
 ## Using With pi-workflows
@@ -263,7 +277,8 @@ tdd-guard verify --spec specs/task.spec --config .tdd-guard.json
 `tdd-guard` is a required dependency of pi-workflows. Install:
 
 ```bash
-npm install -g github:yagaltd/tdd-guard
+git clone https://github.com/yagaltd/tdd-guard.git ~/code/tdd-guard
+cd ~/code/tdd-guard && npm install && npm run build && npm link
 ```
 
 ## Why This Exists
