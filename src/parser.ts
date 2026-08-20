@@ -18,6 +18,8 @@ import {
   type StringLiteral,
   type TemplateLiteral,
 } from "@babel/types";
+import { Parser as AcornParser } from "acorn";
+import { tsPlugin } from "acorn-typescript";
 
 const traverse = (
   "default" in traverseModule.default
@@ -30,6 +32,360 @@ const traverse = (
     CallExpression?: (path: { node: CallExpression }) => void;
   },
 ) => void;
+
+// ─── acorn-based test-block extraction ──────────────────────────────────────
+
+type AcornPlugin = (BaseParser: typeof AcornParser) => typeof AcornParser;
+const TS_AST_PARSER = AcornParser.extend(tsPlugin() as unknown as AcornPlugin);
+
+/**
+ * node:assert (strict + legacy), node:test context, and tap assertion methods.
+ * A call of the form `<identifier>.<method>(...)` with one of these method names
+ * counts as an assertion (e.g. assert.ok, assert.deepStrictEqual, t.match).
+ */
+const ASSERT_METHODS = new Set([
+  "ok",
+  "equal",
+  "notEqual",
+  "deepEqual",
+  "notDeepEqual",
+  "strictEqual",
+  "notStrictEqual",
+  "deepStrictEqual",
+  "notDeepStrictEqual",
+  "match",
+  "doesNotMatch",
+  "throws",
+  "doesNotThrow",
+  "rejects",
+  "doesNotReject",
+  "ifError",
+  "fail",
+  "snapshot",
+  "assert",
+]);
+
+interface AcornNode {
+  type: string;
+  start?: number;
+  end?: number;
+  loc?: {
+    start: { line: number; column: number };
+    end: { line: number; column: number };
+  };
+  [key: string]: unknown;
+}
+
+interface AcornCallExpression extends AcornNode {
+  callee: AcornNode;
+  arguments: AcornNode[];
+}
+
+interface AcornIdentifier extends AcornNode {
+  name: string;
+}
+
+interface AcornMemberExpression extends AcornNode {
+  object: AcornNode;
+  property: AcornNode;
+  computed: boolean;
+}
+
+interface AcornLiteral extends AcornNode {
+  value: unknown;
+}
+
+interface AcornTemplateLiteral extends AcornNode {
+  expressions: unknown[];
+  quasis: { value: { cooked: string | null; raw: string } }[];
+}
+
+interface AcornObjectExpression extends AcornNode {
+  properties: AcornNode[];
+}
+
+interface AcornProperty extends AcornNode {
+  computed: boolean;
+  key: AcornNode;
+  value: AcornNode;
+}
+
+interface AcornFunctionDeclaration extends AcornNode {
+  id: AcornNode | null;
+}
+
+interface AcornVariableDeclarator extends AcornNode {
+  id: AcornNode;
+  init: AcornNode | null;
+}
+
+/**
+ * Generic AST walker. Only descends into objects that look like AST nodes
+ * (have a `type` string), which keeps it robust against acorn-typescript's
+ * TypeScript-specific nodes and never walks loc/start/end metadata.
+ */
+function walkAcorn(node: unknown, visit: (node: AcornNode) => void): void {
+  if (node == null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) walkAcorn(child, visit);
+    return;
+  }
+  const n = node as AcornNode;
+  if (typeof n.type === "string") {
+    visit(n);
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      walkAcorn(n[key], visit);
+    }
+  }
+}
+
+/**
+ * Find `test('name', fn)` / `it(...)` / `describe(...)` calls (and their
+ * .skip/.todo/x- variants) via the real AST instead of a brace-depth heuristic.
+ */
+function extractTestBlocks(code: string): TestBlock[] {
+  let ast: AcornNode;
+  try {
+    ast = TS_AST_PARSER.parse(code, {
+      sourceType: "module",
+      ecmaVersion: "latest",
+      locations: true,
+    }) as unknown as AcornNode;
+  } catch {
+    return [];
+  }
+
+  const blocks: TestBlock[] = [];
+
+  // Named functions (declarations + function/arrow variable assignments) so a
+  // test can delegate its assertions to local helpers (e.g. GOLDEN_CASES.forEach(assertGoldenParity)).
+  const helperFns = collectNamedFunctions(ast);
+  const asserting = new Map<string, boolean>();
+
+  const helperAsserts = (name: string, stack: Set<string>): boolean => {
+    if (asserting.has(name)) return asserting.get(name) as boolean;
+    const fns = helperFns.get(name);
+    if (!fns || fns.length === 0) {
+      asserting.set(name, false);
+      return false;
+    }
+    if (stack.has(name)) return false; // helper cycle with no assertion yet resolved
+    stack.add(name);
+    let result = false;
+    for (const fn of fns) {
+      if (functionHasAssertions(fn.body as AcornNode, helperAsserts, stack)) {
+        result = true;
+        break;
+      }
+    }
+    stack.delete(name);
+    asserting.set(name, result);
+    return result;
+  };
+
+  walkAcorn(ast, (node) => {
+    if (node.type !== "CallExpression") return;
+
+    const call = node as unknown as AcornCallExpression;
+    const info = classifyTestCall(call);
+    if (!info) return;
+
+    const fn = findTestFn(call.arguments);
+    const hasAssertions =
+      info.type === "describe"
+        ? true // describe is a grouping construct, not an assertion-bearing test
+        : fn != null && functionHasAssertions(fn.body as AcornNode, helperAsserts, new Set());
+
+    blocks.push({
+      name: info.name ?? `anonymous-${node.loc?.start.line ?? 0}`,
+      line: node.loc?.start.line ?? 0,
+      skipped: info.skipped,
+      hasAssertions,
+      type: info.type,
+    });
+  });
+
+  return blocks;
+}
+
+function classifyTestCall(
+  call: AcornCallExpression,
+): { name: string | null; skipped: boolean; type: "test" | "it" | "describe" } | null {
+  const callee = call.callee;
+
+  if (callee.type === "Identifier") {
+    const name = (callee as AcornIdentifier).name;
+    if (name === "test" || name === "specify") {
+      return { name: extractTestName(call), skipped: false, type: "test" };
+    }
+    if (name === "it") {
+      return { name: extractTestName(call), skipped: false, type: "it" };
+    }
+    if (name === "describe") {
+      return { name: extractTestName(call), skipped: false, type: "describe" };
+    }
+    if (name === "xtest") {
+      return { name: extractTestName(call), skipped: true, type: "test" };
+    }
+    if (name === "xit") {
+      return { name: extractTestName(call), skipped: true, type: "it" };
+    }
+    if (name === "xdescribe") {
+      return { name: extractTestName(call), skipped: true, type: "describe" };
+    }
+    return null;
+  }
+
+  if (callee.type === "MemberExpression") {
+    const member = callee as AcornMemberExpression;
+    if (member.computed) return null;
+    if (member.object.type !== "Identifier" || member.property.type !== "Identifier") {
+      return null;
+    }
+
+    const objName = (member.object as AcornIdentifier).name;
+    const propName = (member.property as AcornIdentifier).name;
+
+    let type: "test" | "it" | "describe" | null = null;
+    if (objName === "test" || objName === "specify") type = "test";
+    else if (objName === "it") type = "it";
+    else if (objName === "describe") type = "describe";
+    else return null;
+
+    const skipped = propName === "skip" || propName === "todo";
+
+    return {
+      name: extractTestName(call),
+      skipped: skipped || optionsIndicateSkip(call),
+      type,
+    };
+  }
+
+  return null;
+}
+
+function extractTestName(call: AcornCallExpression): string | null {
+  for (const arg of call.arguments) {
+    if (arg.type === "Literal" && typeof (arg as AcornLiteral).value === "string") {
+      return (arg as AcornLiteral).value as string;
+    }
+    if (arg.type === "TemplateLiteral") {
+      const tl = arg as AcornTemplateLiteral;
+      if (tl.expressions.length === 0 && tl.quasis.length > 0) {
+        return tl.quasis[0].value.cooked ?? tl.quasis[0].value.raw;
+      }
+    }
+  }
+  return null;
+}
+
+function findTestFn(args: AcornNode[]): AcornNode | null {
+  for (let i = args.length - 1; i >= 0; i--) {
+    const arg = args[i];
+    if (arg.type === "ArrowFunctionExpression" || arg.type === "FunctionExpression") {
+      return arg;
+    }
+  }
+  return null;
+}
+
+function optionsIndicateSkip(call: AcornCallExpression): boolean {
+  for (const arg of call.arguments) {
+    if (arg.type !== "ObjectExpression") continue;
+    const props = (arg as AcornObjectExpression).properties;
+    for (const prop of props) {
+      if (prop.type !== "Property") continue;
+      const p = prop as AcornProperty;
+      if (p.computed) continue;
+      const key = p.key;
+      const keyName =
+        key.type === "Identifier"
+          ? (key as AcornIdentifier).name
+          : key.type === "Literal"
+            ? String((key as AcornLiteral).value)
+            : null;
+      if (keyName !== "skip" && keyName !== "todo") continue;
+      if (p.value.type === "Literal" && (p.value as AcornLiteral).value === true) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function functionHasAssertions(
+  body: AcornNode,
+  helperAsserts: (name: string, stack: Set<string>) => boolean,
+  stack: Set<string>,
+): boolean {
+  let found = false;
+  walkAcorn(body, (node) => {
+    if (found) return;
+    if (node.type === "CallExpression") {
+      const call = node as unknown as AcornCallExpression;
+      if (calleeIsAssertion(call.callee)) {
+        found = true;
+        return;
+      }
+      // A direct call to, or passing-as-callback of, a local assert helper.
+      for (const candidate of [call.callee, ...call.arguments]) {
+        if (
+          candidate.type === "Identifier" &&
+          helperAsserts((candidate as AcornIdentifier).name, stack)
+        ) {
+          found = true;
+          return;
+        }
+      }
+    }
+  });
+  return found;
+}
+
+function collectNamedFunctions(ast: AcornNode): Map<string, AcornNode[]> {
+  const map = new Map<string, AcornNode[]>();
+  const add = (name: string, node: AcornNode) => {
+    const existing = map.get(name);
+    if (existing) existing.push(node);
+    else map.set(name, [node]);
+  };
+
+  walkAcorn(ast, (node) => {
+    if (node.type === "FunctionDeclaration") {
+      const id = (node as AcornFunctionDeclaration).id;
+      if (id && id.type === "Identifier") add((id as AcornIdentifier).name, node);
+    } else if (node.type === "VariableDeclarator") {
+      const decl = node as AcornVariableDeclarator;
+      if (
+        decl.id.type === "Identifier" &&
+        decl.init &&
+        (decl.init.type === "ArrowFunctionExpression" ||
+          decl.init.type === "FunctionExpression")
+      ) {
+        add((decl.id as AcornIdentifier).name, decl.init);
+      }
+    }
+  });
+
+  return map;
+}
+
+function calleeIsAssertion(callee: AcornNode): boolean {
+  if (callee.type === "Identifier") {
+    const name = (callee as AcornIdentifier).name;
+    return name === "expect" || name === "assert";
+  }
+  if (callee.type === "MemberExpression") {
+    const member = callee as AcornMemberExpression;
+    if (member.computed) return false;
+    const prop = member.property;
+    if (prop.type === "Identifier" && ASSERT_METHODS.has((prop as AcornIdentifier).name)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export interface ParsedTestFile {
   file: string;
@@ -63,7 +419,6 @@ export interface MockCall {
  */
 export function parseTestFile(filePath: string): ParsedTestFile {
   const code = readFileSync(filePath, "utf-8");
-  const testBlocks: TestBlock[] = [];
   const imports: ImportInfo[] = [];
   const mockCalls: MockCall[] = [];
 
@@ -74,11 +429,11 @@ export function parseTestFile(filePath: string): ParsedTestFile {
       plugins: ["typescript", "jsx", "decorators-legacy", "importMeta"],
     });
   } catch {
-    // Skip files that can't be parsed
-    return { file: filePath, testBlocks: [], imports: [], mockCalls: [] };
+    ast = null;
   }
 
-  traverse(ast, {
+  if (ast) {
+    traverse(ast, {
     // Track imports
     ImportDeclaration(path) {
       const source = path.node.source.value;
@@ -137,73 +492,10 @@ export function parseTestFile(filePath: string): ParsedTestFile {
       }
     },
   });
-
-  // Extract test blocks using a simple regex-based approach (more robust across frameworks)
-  const lines = code.split("\n");
-  let currentTest: TestBlock | null = null;
-  let braceDepth = 0;
-  let inTest = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNum = i + 1;
-
-    // Detect test/it/describe blocks
-    const testMatch = line.match(
-      /^\s*(x?(?:test|it|describe|specify))(?:\.(?:skip|todo|only))?\s*[\s(]/,
-    );
-    if (testMatch) {
-      const type = testMatch[1].replace(/^x/, "") as "test" | "it" | "describe";
-      const isX = testMatch[1].startsWith("x");
-      const isSkip = /\.skip\s*\(/.test(line);
-      const isTodo = /\.todo\s*\(/.test(line);
-      const isOnly = /\.only\s*\(/.test(line);
-
-      // Extract test name
-      const nameMatch = line.match(
-        /(?:test|it|describe|specify)(?:\.(?:skip|todo|only))?\s*[\s(]\s*["'`]([^"'`]+)["'`]/,
-      );
-      const name = nameMatch ? nameMatch[1] : `anonymous-${lineNum}`;
-
-      currentTest = {
-        name,
-        line: lineNum,
-        skipped: isX || isSkip || isTodo,
-        hasAssertions: false,
-        type,
-      };
-      inTest = true;
-      braceDepth = 0;
-      continue;
-    }
-
-    if (inTest && currentTest) {
-      // Track brace depth
-      for (const ch of line) {
-        if (ch === "{") braceDepth++;
-        if (ch === "}") braceDepth--;
-      }
-
-      // Check for assertions
-      if (
-        /\b(expect|assert|assertThat|should|assert_eq!|self\.assert)\s*[.(!]/.test(line)
-      ) {
-        currentTest.hasAssertions = true;
-      }
-
-      // End of test block
-      if (braceDepth <= 0 && line.includes("}")) {
-        testBlocks.push(currentTest);
-        currentTest = null;
-        inTest = false;
-      }
-    }
   }
 
-  // Handle unclosed test blocks
-  if (currentTest) {
-    testBlocks.push(currentTest);
-  }
+  // Test blocks are extracted via the acorn AST, not a brace-depth heuristic.
+  const testBlocks = extractTestBlocks(code);
 
   return { file: filePath, testBlocks, imports, mockCalls };
 }
