@@ -153,9 +153,28 @@ function extractTestBlocks(code: string): TestBlock[] {
       locations: true,
     }) as unknown as AcornNode;
   } catch {
-    return [];
+    // acorn (with its scope checks) rejects some real-world test files that
+    // run fine under vitest/bun — e.g. a top-level `const fs = require("fs")`
+    // redeclaring an `import * as fs` binding. Fall back to the lenient
+    // @babel/parser (no scope analysis) so rules stay sighted on the file
+    // instead of silently extracting zero blocks.
+    try {
+      ast = parse(code, {
+        sourceType: "module",
+        plugins: ["typescript", "jsx", "decorators-legacy", "importMeta"],
+        // Keep going after recoverable scope errors (e.g. duplicate top-level
+        // declarations) and surface them as ast.errors instead of throwing —
+        // an unparseable-by-acorn file must still yield its test blocks.
+        errorRecovery: true,
+      }) as unknown as AcornNode;
+    } catch {
+      return [];
+    }
   }
+  return extractTestBlocksFromAst(ast);
+}
 
+function extractTestBlocksFromAst(ast: AcornNode): TestBlock[] {
   const blocks: TestBlock[] = [];
 
   // Named functions (declarations + function/arrow variable assignments) so a
@@ -265,11 +284,25 @@ function classifyTestCall(
   return null;
 }
 
+/**
+ * String-literal value in either AST flavor: acorn uses `Literal`,
+ * @babel/parser (the fallback path) uses `StringLiteral`.
+ */
+function stringLiteralValue(node: AcornNode): string | null {
+  if (node.type === "Literal" && typeof (node as AcornLiteral).value === "string") {
+    return (node as AcornLiteral).value as string;
+  }
+  if (node.type === "StringLiteral") {
+    const value = (node as unknown as { value: unknown }).value;
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
 function extractTestName(call: AcornCallExpression): string | null {
   for (const arg of call.arguments) {
-    if (arg.type === "Literal" && typeof (arg as AcornLiteral).value === "string") {
-      return (arg as AcornLiteral).value as string;
-    }
+    const str = stringLiteralValue(arg);
+    if (str !== null) return str;
     if (arg.type === "TemplateLiteral") {
       const tl = arg as AcornTemplateLiteral;
       if (tl.expressions.length === 0 && tl.quasis.length > 0) {
@@ -295,18 +328,22 @@ function optionsIndicateSkip(call: AcornCallExpression): boolean {
     if (arg.type !== "ObjectExpression") continue;
     const props = (arg as AcornObjectExpression).properties;
     for (const prop of props) {
-      if (prop.type !== "Property") continue;
+      // "Property" in acorn, "ObjectProperty" in @babel/parser.
+      if (prop.type !== "Property" && prop.type !== "ObjectProperty") continue;
       const p = prop as AcornProperty;
       if (p.computed) continue;
       const key = p.key;
       const keyName =
         key.type === "Identifier"
           ? (key as AcornIdentifier).name
-          : key.type === "Literal"
+          : key.type === "Literal" || key.type === "StringLiteral"
             ? String((key as AcornLiteral).value)
             : null;
       if (keyName !== "skip" && keyName !== "todo") continue;
-      if (p.value.type === "Literal" && (p.value as AcornLiteral).value === true) {
+      if (
+        (p.value.type === "Literal" || p.value.type === "BooleanLiteral") &&
+        (p.value as AcornLiteral).value === true
+      ) {
         return true;
       }
     }
