@@ -2,9 +2,28 @@
  * tdd-guard lint engine
  * Runs all enabled rules and collects results
  */
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { globSync } from "glob";
 import { TddGuardConfig, RuleResult, LintResult, Violation, LintOptions } from "./types.js";
+
+/**
+ * Runtime options for a lint run. Extends LintOptions (which stays untouched
+ * in types.ts) with the two controls the vacuous-lint fix introduced.
+ */
+export type LintRunOptions = Omit<LintOptions, "tests"> & {
+  /** Test directory. Omitted → probe tests/, then test/, then src-colocated. */
+  tests?: string;
+  /** Escape hatch: accept a scan that finds zero test files. */
+  allowEmpty?: boolean;
+};
+
+const EXCLUDED_SEGMENTS = new Set([".git", "node_modules"]);
+
+function isExcluded(scanRoot: string, file: string): boolean {
+  const rel = relative(scanRoot, file);
+  return rel.split(/[\\/]/).some((seg) => EXCLUDED_SEGMENTS.has(seg));
+}
 import { loadConfig } from "./config.js";
 import { ruleNoInternalMocks } from "./rules/no-internal-mocks.js";
 import { ruleNoSkippedTests } from "./rules/no-skipped-tests.js";
@@ -28,15 +47,40 @@ const RULE_REGISTRY: Record<string, RuleFn> = {
   "no-implementation-coupling": ruleNoImplementationCoupling,
 };
 
-export function lint(options: LintOptions): LintResult {
+/**
+ * Run all enabled rules over the discovered test files.
+ *
+ * @cc [label:lint-discovery] segment-exact-exclusion
+ * Exclusion matches whole path components exactly (`.git`, `node_modules`) on
+ * each glob hit's path relative to its scan root — never substring matching on
+ * absolute paths. A lint run from <repo>/.git/subagents/<run>/<worker> (any pi
+ * subagent worktree) must still see the project's test files; `.github/` and
+ * names merely containing "git" (e.g. digit.ts) survive.
+ *
+ * @cc [label:lint-discovery] zero-files-loud-failure
+ * A lint run that discovers zero test files throws (CLI exits non-zero) with a
+ * message naming the scanned roots, unless options.allowEmpty is set — lint
+ * never passes vacuously on an empty scan.
+ */
+export function lint(options: LintRunOptions): LintResult {
   const config = loadConfig(options.config || undefined);
   const srcDir = resolve(options.src || "src");
-  const testDir = resolve(options.tests || "tests");
+
+  // Test discovery: an explicit --tests always wins; otherwise probe tests/,
+  // then test/, then fall back to src-colocated scanning.
+  const testDir =
+    options.tests !== undefined && options.tests !== ""
+      ? resolve(options.tests)
+      : existsSync(resolve("tests"))
+        ? resolve("tests")
+        : existsSync(resolve("test"))
+          ? resolve("test")
+          : srcDir;
 
   // Collect source files
   const srcPatterns = ["**/*.{ts,tsx,js,jsx,rs,py}"];
-  const srcFiles = globSync(srcPatterns, { cwd: srcDir, absolute: true })
-    .filter((f) => !f.includes("node_modules") && !f.includes(".git"));
+  const srcFiles = globSync(srcPatterns, { cwd: srcDir, absolute: true, dot: true })
+    .filter((f) => !isExcluded(srcDir, f));
 
   // Collect test files
   const testPatterns = [
@@ -45,13 +89,22 @@ export function lint(options: LintOptions): LintResult {
     "**/test_*.py",
     "**/*_test.py",
   ];
-  const testFiles = globSync(testPatterns, { cwd: testDir, absolute: true })
-    .filter((f) => !f.includes("node_modules") && !f.includes(".git"));
+  const testFiles = globSync(testPatterns, { cwd: testDir, absolute: true, dot: true })
+    .filter((f) => !isExcluded(testDir, f));
 
   // Also check for colocated tests inside src
-  const colocatedTests = globSync(testPatterns, { cwd: srcDir, absolute: true })
-    .filter((f) => !f.includes("node_modules") && !f.includes(".git"));
+  const colocatedTests = globSync(testPatterns, { cwd: srcDir, absolute: true, dot: true })
+    .filter((f) => !isExcluded(srcDir, f));
   const allTestFiles = [...new Set([...testFiles, ...colocatedTests])];
+
+  if (allTestFiles.length === 0 && !options.allowEmpty) {
+    const roots = [...new Set([testDir, srcDir])].join(", ");
+    throw new Error(
+      `tdd-guard lint found 0 test files. Scanned roots: ${roots}. ` +
+      "A lint run that sees no tests proves nothing — check the paths, or pass " +
+      "--allow-empty to accept an empty scan.",
+    );
+  }
 
   const checks: RuleResult[] = [];
   let hasError = false;

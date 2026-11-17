@@ -15,22 +15,32 @@ const program = new Command();
 program
     .name("tdd-guard")
     .description("Test quality enforcement CLI — lint, verify, mutate")
-    .version("0.1.1");
+    .version("0.1.2");
 // ─── lint ───────────────────────────────────────────────────────────────────
 program
     .command("lint")
     .description("Static analysis of test code quality")
     .option("--src <dir>", "Source directory", "src")
-    .option("--tests <dir>", "Test directory", "tests")
+    .option("--tests <dir>", "Test directory (default: probe tests/, then test/, then src-colocated)")
+    .option("--allow-empty", "Exit 0 even when zero test files are found (skips the vacuous-run guard)", false)
     .option("--config <file>", "Config file path", "")
     .option("--format <format>", "Output format: json or text", "json")
     .action((opts) => {
-    const result = lint({
-        src: opts.src,
-        tests: opts.tests,
-        config: opts.config,
-        format: opts.format,
-    });
+    let result;
+    try {
+        result = lint({
+            src: opts.src,
+            tests: opts.tests,
+            config: opts.config,
+            format: opts.format,
+            allowEmpty: opts.allowEmpty,
+        });
+    }
+    catch (err) {
+        // Loud failure — a scan that saw no tests must never print a green PASS.
+        console.error(`tdd-guard lint: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+    }
     if (opts.format === "text") {
         printLintText(result);
     }
