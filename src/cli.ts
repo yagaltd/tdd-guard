@@ -8,18 +8,36 @@
  *   verify   — Bridge to agent-spec contracts
  *   mutate   — Mutation testing wrapper
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { lint } from "./lint.js";
 import { verify } from "./verify.js";
 import { mutate } from "./mutate.js";
 import type { LintResult, MutateResult, VerifyResult } from "./types.js";
 
+/**
+ * @cc [label:cli] version-derived-from-package-json
+ * The CLI's --version string is read from package.json at startup — no
+ * hardcoded version literal may exist in cli.ts (the string drifted in
+ * 0.1.4 and again at 0.1.5/0.1.6; the class of bug dies here).
+ */
+const PKG_VERSION: string = (
+  JSON.parse(
+    readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"),
+      "utf-8",
+    ),
+  ) as { version: string }
+).version;
+
 const program = new Command();
 
 program
   .name("tdd-guard")
   .description("Test quality enforcement CLI — lint, verify, mutate")
-  .version("0.1.5");
+  .version(PKG_VERSION);
 
 // ─── lint ───────────────────────────────────────────────────────────────────
 
