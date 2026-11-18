@@ -27,7 +27,6 @@ const RULE_REGISTRY = {
  * explicit --tests wins, loud zero-file failure) lives in ./discovery.js and
  * is shared with verify and mutate.
  *
- * @cc [label:lint] rust-scan-classification
  * A lint scan over a Rust repository is classified, not parsed: when every
  * discovered test file ends `.rs`, or the project has a Cargo.toml at cwd and
  * zero JS-parseable test files were discovered, lint prints a loud
@@ -37,7 +36,6 @@ const RULE_REGISTRY = {
  * the rust skip in the same line.
  */
 /**
- * @cc [label:lint] python-scan-classification
  * A lint scan over a Python repository is classified, not parsed: when every
  * discovered test file ends `.py`, or the project has a pyproject.toml at cwd
  * and zero JS-parseable test files were discovered, lint prints a loud
