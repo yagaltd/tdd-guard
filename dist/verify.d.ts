@@ -1,4 +1,10 @@
 import type { VerifyOptions, VerifyResult } from "./types.js";
+/**
+ * @cc [label:verify] rust-selector-bare-name-suffix-match
+ * Rust selectors match the test's short name: cargo listing entries carry
+ * module paths (`crate::mod::test`), so matching anchors a bare selector
+ * on `::` as a suffix — never a bare prefix or substring.
+ */
 export declare function verify(options: VerifyOptions): VerifyResult;
 /**
  * Resolve a cargo project's test inventory: run `cargo test --quiet -- --list`

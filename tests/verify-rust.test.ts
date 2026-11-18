@@ -86,4 +86,60 @@ describe("rust binding (task 2)", () => {
       process.chdir(prevCwd);
     }
   });
+
+  test("module_path_listing_matches_bare_selector", () => {
+    // src-colocated bin tests list with full module paths (the fixture lists
+    // `spec_verify::boundaries::tests::test_my_pin: test`); a spec selector of
+    // the bare name must resolve against that entry.
+    const specPath = join(specDir, "module-path.spec");
+    writeFileSync(
+      specPath,
+      [
+        "Scenario: bare selector resolves against module-path listing entry",
+        "  Test: test_my_pin",
+        "",
+      ].join("\n"),
+    );
+
+    const prevCwd = process.cwd();
+    process.chdir(FIXTURE);
+    try {
+      const result = verify({ spec: specPath, format: "json" });
+
+      expect(result.test_selectors.map((s) => [s.selector, s.found])).toEqual([
+        ["test_my_pin", true],
+      ]);
+      expect(result.exit_code).toBe(0);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  test("selector_prefix_does_not_overmatch", () => {
+    // The listing contains only `test_my_pin_extended: test` (rust-overmatch
+    // fixture); the bare selector must stay not-found — the suffix match has
+    // to anchor on `::`, never on a bare prefix/substring.
+    const specPath = join(specDir, "overmatch.spec");
+    writeFileSync(
+      specPath,
+      [
+        "Scenario: prefix of a listed name does not resolve",
+        "  Test: test_my_pin",
+        "",
+      ].join("\n"),
+    );
+
+    const prevCwd = process.cwd();
+    process.chdir(join("tests", "fixtures", "rust-overmatch"));
+    try {
+      const result = verify({ spec: specPath, format: "json" });
+
+      expect(result.test_selectors.map((s) => [s.selector, s.found])).toEqual([
+        ["test_my_pin", false],
+      ]);
+      expect(result.exit_code).toBe(1);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
 });
