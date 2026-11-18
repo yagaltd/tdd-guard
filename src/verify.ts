@@ -17,6 +17,12 @@ import { discoverTests } from "./discovery.js";
 import { loadConfig } from "./config.js";
 import { parseFile } from "./parser.js";
 
+/**
+ * @cc [label:verify] rust-selector-bare-name-suffix-match
+ * Rust selectors match the test's short name: cargo listing entries carry
+ * module paths (`crate::mod::test`), so matching anchors a bare selector
+ * on `::` as a suffix — never a bare prefix or substring.
+ */
 export function verify(options: VerifyOptions): VerifyResult {
   const config = loadConfig(options.config);
   const specPath = resolve(options.spec);
@@ -100,7 +106,10 @@ export function verify(options: VerifyOptions): VerifyResult {
     const found =
       testNames.has(s.selector) ||
       allTestContent.includes(s.selector) ||
-      rustSelectors.has(s.selector);
+      rustSelectors.has(s.selector) ||
+      Array.from(rustSelectors).some(
+        (n) => n === s.selector || n.endsWith("::" + s.selector),
+      );
     return {
       scenario: s.name,
       selector: s.selector,

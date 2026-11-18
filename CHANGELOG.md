@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4 — rust module-path selector fix
+
+The 0.1.3 rust binding was partial: integration tests list with bare names
+(exact match worked in the fixture E2E), but src-colocated `#[cfg(test)]`
+tests list with full module paths (`spec_verify::boundaries::tests::test_x`).
+Verify matched selectors by exact set membership, so every module-path name
+mismatched and real cargo repos reported all selectors not-found. Verify now
+matches the bare selector name against the listing's `::`-anchored suffix —
+exact matching only worked for integration tests.
+
 ## 0.1.3 — Rust binding + shared discovery
 
 ### The defect

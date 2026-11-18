@@ -241,7 +241,7 @@ This command can be used with agent-spec-generated contracts, but it is not limi
 
 #### Rust projects
 
-When the target repo has a `Cargo.toml`, `verify` resolves `Test:` selectors through the test runner itself — `cargo test --quiet -- --list` — instead of JS parsing. Each selector still reports found/not-found, and a selector missing from the listing fails the run. JavaScript resolution is unchanged.
+When the target repo has a `Cargo.toml`, `verify` resolves `Test:` selectors through the test runner itself — `cargo test --quiet -- --list` — instead of JS parsing. Selectors match the test's short name: the listing's module path is stripped via a `::`-anchored suffix match. Each selector still reports found/not-found, and a selector missing from the listing fails the run. JavaScript resolution is unchanged.
 
 ## Standalone Usage
 
