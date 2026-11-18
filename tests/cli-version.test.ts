@@ -16,8 +16,15 @@ test("test_cli_version_derives_from_package_json", () => {
   // commander's version wiring stays in place
   expect(source).toMatch(/\.version\(/);
   // and the package is bumped — the derived string tracks this automatically
+  // Derived expectations: the version moves with the package, never with a
+  // hardcoded literal (the string-drift class died in 0.1.7 — pins must not
+  // resurrect it).
   const pkg = JSON.parse(readFileSync("package.json", "utf-8")) as {
     version: string;
   };
-  expect(pkg.version).toBe("0.1.7");
+  const lock = JSON.parse(readFileSync("package-lock.json", "utf-8")) as {
+    version: string;
+  };
+  expect(pkg.version).toBe(lock.version);
+  expect(pkg.version.length).toBeGreaterThan(0);
 });
