@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name("tdd-guard")
   .description("Test quality enforcement CLI — lint, verify, mutate")
-  .version("0.1.2");
+  .version("0.1.3");
 
 // ─── lint ───────────────────────────────────────────────────────────────────
 
@@ -62,16 +62,25 @@ program
   .command("verify")
   .description("Verify tests cover agent-spec contract decisions, boundaries, and selectors")
   .requiredOption("--spec <file>", "agent-spec .spec file path")
-  .option("--tests <dir>", "Test directory", "tests")
+  .option("--src <dir>", "Source directory", "src")
+  .option("--tests <dir>", "Test directory (default: probe tests/, then test/, then src-colocated)")
   .option("--config <file>", "Config file path", "")
   .option("--format <format>", "Output format: json or text", "json")
   .action((opts) => {
-    const result = verify({
-      spec: opts.spec,
-      tests: opts.tests,
-      config: opts.config,
-      format: opts.format,
-    });
+    let result: VerifyResult;
+    try {
+      result = verify({
+        spec: opts.spec,
+        src: opts.src,
+        tests: opts.tests,
+        config: opts.config,
+        format: opts.format,
+      });
+    } catch (err) {
+      // Loud failure — a scan that saw no tests must never print a green PASS.
+      console.error(`tdd-guard verify: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
 
     if (opts.format === "text") {
       printVerifyText(result);
@@ -88,20 +97,27 @@ program
   .command("mutate")
   .description("Mutation testing — wraps Stryker, cargo-mutants, or mutmut")
   .option("--src <dir>", "Source directory", "src")
-  .option("--tests <dir>", "Test directory", "tests")
+  .option("--tests <dir>", "Test directory (default: probe tests/, then test/, then src-colocated)")
   .option("--threshold <pct>", "Minimum mutation score threshold", "60")
   .option("--since <ref>", "Only mutate files changed since git ref", "")
   .option("--config <file>", "Config file path", "")
   .option("--format <format>", "Output format: json or text", "json")
   .action((opts) => {
-    const result = mutate({
-      src: opts.src,
-      tests: opts.tests,
-      threshold: parseInt(opts.threshold),
-      since: opts.since,
-      config: opts.config,
-      format: opts.format,
-    });
+    let result: MutateResult;
+    try {
+      result = mutate({
+        src: opts.src,
+        tests: opts.tests,
+        threshold: parseInt(opts.threshold),
+        since: opts.since,
+        config: opts.config,
+        format: opts.format,
+      });
+    } catch (err) {
+      // Loud failure — a scan that saw no tests must never print a green PASS.
+      console.error(`tdd-guard mutate: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
 
     if (opts.format === "text") {
       printMutateText(result);

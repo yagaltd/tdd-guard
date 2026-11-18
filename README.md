@@ -167,6 +167,20 @@ JSON output:
 }
 ```
 
+#### Test discovery, `--allow-empty`, and zero-file runs
+
+All three commands (`lint`, `verify`, `mutate`) share one discovery implementation:
+
+- An explicit `--tests <dir>` always wins; probing is skipped.
+- Without `--tests`, discovery probes `tests/`, then `test/`, then falls back to src-colocated tests in `src/`.
+- Exclusion is segment-exact: only whole path components named exactly `.git` or `node_modules` are skipped.
+
+A scan that finds `0 test files` fails loudly — the command exits non-zero with the scanned roots in the message, because a run that sees no tests proves nothing. Pass `--allow-empty` to `lint` to accept an empty scan explicitly:
+
+```bash
+tdd-guard lint --allow-empty
+```
+
 ### `mutate`
 
 Mutation testing wrapper. This command delegates to the mutation tool for your language and normalizes the result.
@@ -224,6 +238,10 @@ Scenario: expired session is rejected
 - `Test:` selectors exist in the test suite
 
 This command can be used with agent-spec-generated contracts, but it is not limited to agent-spec.
+
+#### Rust projects
+
+When the target repo has a `Cargo.toml`, `verify` resolves `Test:` selectors through the test runner itself — `cargo test --quiet -- --list` — instead of JS parsing. Each selector still reports found/not-found, and a selector missing from the listing fails the run. JavaScript resolution is unchanged.
 
 ## Standalone Usage
 
