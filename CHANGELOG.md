@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.6 — python repos classified, selector match anchored, lock version truthful
+
+### The defects
+
+- **Python-only repos got a dishonest lint run.** Like rust repos before
+  0.1.5, a python-only scan either hit the zero-files loud failure (exit 1,
+  "found 0 test files") or — when discovery could see the `.py` files — fell
+  through to the JavaScript rules over python files and printed a vacuous
+  green: rule checks "passing" over code nobody parsed.
+- **verify's selector match was substring-loose.** The content leg resolved a
+  selector with a bare `includes()`, so the selector `test_my_pin`
+  false-positived on a test file containing only `test_my_pin_extended`.
+- **package-lock.json lied about the version.** package.json had moved on to
+  0.1.5 while the lock's root version still said 0.1.1.
+
+### Fix
+
+- **SKIPPED-PY classification.** Mirrors SKIPPED-RUST exactly: when every
+  discovered test file ends `.py` — or the repo has a `pyproject.toml` and no
+  JS-parseable test files were discovered — lint prints a loud `SKIPPED-PY`
+  line to stderr naming the command and the reason (the JS parser cannot
+  evaluate python) and exits 0 with an honest empty result. Mixed repos
+  evaluate the JS files normally and note the python skip in the same loud
+  line. The JavaScript zero-files guard is unchanged. Python test quality is
+  enforced by mutmut via `tdd-guard mutate`.
+- **Word-anchored selector match.** The content leg escapes the selector and
+  matches between word boundaries, so a selector only resolves where it
+  appears as a whole identifier. Exact-name and cargo-listing `::`-suffix
+  legs are unchanged.
+- **Version sync.** package.json and package-lock.json both say 0.1.6, and a
+  pin keeps the lock's root version equal to package.json going forward.
+
 ## 0.1.5 — lint classifies Rust repositories (SKIPPED-RUST)
 
 ### The defect

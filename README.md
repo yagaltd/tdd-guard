@@ -195,6 +195,16 @@ Mixed repositories (JavaScript + rust) evaluate the JS test files normally and n
 tdd-guard mutate --threshold 60
 ```
 
+#### Python repositories — the SKIPPED-PY classification
+
+`lint` is a JavaScript/TypeScript analyzer. When a scan discovers only Python test files — every discovered test file ends in `.py`, or the repo has a `pyproject.toml` and no JS-parseable test files were found — the run neither fails nor reports a vacuous pass. It prints a loud `SKIPPED-PY` line to stderr naming the command and the reason (the JS parser cannot evaluate python) and exits `0` with no rule checks:
+
+```text
+SKIPPED-PY: tdd-guard lint — 1 python test file(s) discovered (tests/test_app.py). The JS parser cannot evaluate python, so this scan is classified skipped-py (exit 0) — neither a pass nor a failure. Python test quality is enforced by mutmut via `tdd-guard mutate`.
+```
+
+Mixed repositories (JavaScript + python) evaluate the JS test files normally and note the python skip in the same loud line. The zero-file loud guard is unchanged for JavaScript repositories: a JS scan that sees no tests still exits non-zero. For python test quality, the same mutation wrapper applies — `tdd-guard mutate` detects python via `pyproject.toml` and delegates to mutmut.
+
 ### `mutate`
 
 Mutation testing wrapper. This command delegates to the mutation tool for your language and normalizes the result.
