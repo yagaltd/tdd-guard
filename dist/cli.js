@@ -15,7 +15,7 @@ const program = new Command();
 program
     .name("tdd-guard")
     .description("Test quality enforcement CLI — lint, verify, mutate")
-    .version("0.1.4");
+    .version("0.1.5");
 // ─── lint ───────────────────────────────────────────────────────────────────
 program
     .command("lint")

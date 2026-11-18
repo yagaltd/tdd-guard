@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.5 — lint classifies Rust repositories (SKIPPED-RUST)
+
+### The defect
+
+`tdd-guard lint` loud-failed on Rust repositories instead of classifying
+them. Rust test files were invisible to lint's discovery — the rust pattern
+needs a `tests` path segment that never exists when scanning from inside the
+test dir — so every cargo repo hit the zero-files guard: exit 1, "found 0
+test files". And `--allow-empty` on a cargo repo printed a vacuous green:
+every rule passing over a scan that never saw a rust test file. Verify's
+rust binding (0.1.4) already resolved selectors through the cargo listing —
+lint classification completes the rust story.
+
+### Fix
+
+- **Classification, not parsing.** When every discovered lint test file ends
+  `.rs` — or the project has a `Cargo.toml` at cwd and zero JS-parseable test
+  files were discovered — lint prints a loud `SKIPPED-RUST` line to stderr
+  naming the command and the reason (the JS parser cannot evaluate rust) and
+  exits 0 with no rule checks: neither a failure nor a vacuous pass. No
+  parser changes; the six rules and their semantics are untouched.
+- **Mixed repositories.** JS test files are evaluated normally; the rust
+  skip is noted in the same loud line.
+- **JS guard unchanged.** A JavaScript repository whose scan finds zero test
+  files still exits 1 loudly (the 067 semantics), with or without
+  `--allow-empty` being needed.
+- **Version sync.** The CLI `--version` string now matches package.json
+  (0.1.5); the 0.1.4 fix round missed the string.
+
 ## 0.1.4 — rust module-path selector fix
 
 The 0.1.3 rust binding was partial: integration tests list with bare names

@@ -181,6 +181,20 @@ A scan that finds `0 test files` fails loudly — the command exits non-zero wit
 tdd-guard lint --allow-empty
 ```
 
+#### Rust repositories — the SKIPPED-RUST classification
+
+`lint` is a JavaScript/TypeScript analyzer. When a scan discovers only Rust test files — every discovered test file ends in `.rs`, or the repo has a `Cargo.toml` and no JS-parseable test files were found — the run neither fails nor reports a vacuous pass. It prints a loud `SKIPPED-RUST` line to stderr naming the command and the reason (the JS parser cannot evaluate rust) and exits `0` with no rule checks:
+
+```text
+SKIPPED-RUST: tdd-guard lint — no JS-parseable test files discovered (Cargo.toml present). The JS parser cannot evaluate rust, so this scan is classified skipped-rust (exit 0) — neither a pass nor a failure. Rust test quality is enforced by cargo-mutants via `tdd-guard mutate`.
+```
+
+Mixed repositories (JavaScript + rust) evaluate the JS test files normally and note the rust skip in the same loud line. The zero-file loud guard is unchanged for JavaScript repositories: a JS scan that sees no tests still exits non-zero. For rust test quality, use the mutation wrapper:
+
+```bash
+tdd-guard mutate --threshold 60
+```
+
 ### `mutate`
 
 Mutation testing wrapper. This command delegates to the mutation tool for your language and normalizes the result.
@@ -241,7 +255,7 @@ This command can be used with agent-spec-generated contracts, but it is not limi
 
 #### Rust projects
 
-When the target repo has a `Cargo.toml`, `verify` resolves `Test:` selectors through the test runner itself — `cargo test --quiet -- --list` — instead of JS parsing. Selectors match the test's short name: the listing's module path is stripped via a `::`-anchored suffix match. Each selector still reports found/not-found, and a selector missing from the listing fails the run. JavaScript resolution is unchanged.
+When the target repo has a `Cargo.toml`, `verify` resolves `Test:` selectors through the test runner itself — `cargo test --quiet -- --list` — instead of JS parsing. Selectors match the test's short name: the listing's module path is stripped via a `::`-anchored suffix match. Each selector still reports found/not-found, and a selector missing from the listing fails the run. JavaScript resolution is unchanged. For `lint` over the same repo, a rust-only scan is classified `SKIPPED-RUST` instead of being evaluated — see the lint section above.
 
 ## Standalone Usage
 
