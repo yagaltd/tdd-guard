@@ -7,7 +7,9 @@
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { globSync } from "glob";
-const EXCLUDED_SEGMENTS = new Set([".git", "node_modules"]);
+// "fixtures" joins .git/node_modules: fixture files are test-SHAPED data
+// (parser edge cases, sample violations), not tests any command evaluates.
+const EXCLUDED_SEGMENTS = new Set([".git", "node_modules", "fixtures"]);
 function isExcluded(scanRoot, file) {
     const rel = relative(scanRoot, file);
     return rel.split(/[\\/]/).some((seg) => EXCLUDED_SEGMENTS.has(seg));

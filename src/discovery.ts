@@ -26,7 +26,9 @@ export interface DiscoveryResult {
   testFiles: string[];
 }
 
-const EXCLUDED_SEGMENTS = new Set([".git", "node_modules"]);
+// "fixtures" joins .git/node_modules: fixture files are test-SHAPED data
+// (parser edge cases, sample violations), not tests any command evaluates.
+const EXCLUDED_SEGMENTS = new Set([".git", "node_modules", "fixtures"]);
 
 function isExcluded(scanRoot: string, file: string): boolean {
   const rel = relative(scanRoot, file);
