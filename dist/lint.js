@@ -36,6 +36,17 @@ const RULE_REGISTRY = {
  * repositories, and mixed scans evaluate JS test files normally while noting
  * the rust skip in the same line.
  */
+/**
+ * @cc [label:lint] python-scan-classification
+ * A lint scan over a Python repository is classified, not parsed: when every
+ * discovered test file ends `.py`, or the project has a pyproject.toml at cwd
+ * and zero JS-parseable test files were discovered, lint prints a loud
+ * SKIPPED-PY line (stderr) naming the command and the reason and exits 0
+ * with no rule checks — neither a vacuous pass over unparsed python files nor
+ * a loud failure. Mixed scans evaluate JS test files normally while noting
+ * the python skip in the same loud channel; the JS zero-files guard keeps
+ * its semantics for JavaScript repositories.
+ */
 export function lint(options) {
     const config = loadConfig(options.config || undefined);
     // A cargo project may legitimately discover zero JS test files (its tests
@@ -43,16 +54,21 @@ export function lint(options) {
     // yields for that case only — the scan is classified SKIPPED-RUST below,
     // never a silent green. JS repos keep the guard exactly as-is.
     const isCargoProject = existsSync(resolve("Cargo.toml"));
+    const isPythonProject = existsSync(resolve("pyproject.toml"));
     const { srcFiles, testFiles: allTestFiles } = discoverTests({
         src: options.src,
         tests: options.tests,
-        allowEmpty: options.allowEmpty || isCargoProject,
+        allowEmpty: options.allowEmpty || isCargoProject || isPythonProject,
         command: "lint",
     });
     // Rust classification at scan level: the JS parser cannot evaluate rust,
     // so rust-only scans are loud-skipped (exit 0, no checks) and mixed scans
     // note the rust skip while evaluating JS test files normally.
+    // Python classification mirrors it exactly: python-only scans are
+    // loud-skipped the same way instead of falling through to the JS rules
+    // over .py files (a vacuous pass) or hitting the zero-files guard.
     const rustTestFiles = allTestFiles.filter((f) => f.endsWith(".rs"));
+    const pythonTestFiles = allTestFiles.filter((f) => f.endsWith(".py"));
     const jsTestFiles = allTestFiles.filter((f) => !f.endsWith(".rs") && !f.endsWith(".py"));
     if (jsTestFiles.length === 0) {
         const rustOnlyScan = allTestFiles.length === 0
@@ -62,9 +78,21 @@ export function lint(options) {
             console.error(skippedRustMessage(allTestFiles, false));
             return { command: "lint", exit_code: 0, checks: [] };
         }
+        const pythonOnlyScan = allTestFiles.length === 0
+            ? isPythonProject
+            : pythonTestFiles.length === allTestFiles.length;
+        if (pythonOnlyScan) {
+            console.error(skippedPythonMessage(pythonTestFiles, false));
+            return { command: "lint", exit_code: 0, checks: [] };
+        }
     }
-    else if (rustTestFiles.length > 0 || isCargoProject) {
-        console.error(skippedRustMessage(rustTestFiles, true));
+    else {
+        if (rustTestFiles.length > 0 || isCargoProject) {
+            console.error(skippedRustMessage(rustTestFiles, true));
+        }
+        if (pythonTestFiles.length > 0 || isPythonProject) {
+            console.error(skippedPythonMessage(pythonTestFiles, true));
+        }
     }
     const checks = [];
     let hasError = false;
@@ -122,3 +150,34 @@ function skippedRustMessage(rustTestFiles, jsEvaluated) {
         `The JS parser cannot evaluate rust, so ${outcome}. ` +
         "Rust test quality is enforced by cargo-mutants via `tdd-guard mutate`.");
 }
+/**
+ * The loud SKIPPED-PY line: the python mirror of the SKIPPED-RUST line. Names
+ * the command and the reason (the JS parser cannot evaluate python), lists
+ * any discovered python test files, and states the outcome. In python-only
+ * scans the run exits 0 with no checks — neither failing nor passing
+ * vacuously; in mixed scans the JS files were evaluated normally and only
+ * the python skip is noted.
+ */
+function skippedPythonMessage(pythonTestFiles, jsEvaluated) {
+    const found = pythonTestFiles.length > 0
+        ? `${pythonTestFiles.length} python test file(s) discovered (${pythonTestFiles
+            .map((f) => relative(process.cwd(), f))
+            .join(", ")})`
+        : jsEvaluated
+            ? "python test files are not evaluated in this python project (pyproject.toml present)"
+            : "no JS-parseable test files discovered (pyproject.toml present)";
+    const outcome = jsEvaluated
+        ? "the python files are skipped while the JavaScript test files were evaluated normally"
+        : "this scan is classified skipped-py (exit 0) — neither a pass nor a failure";
+    return (`SKIPPED-PY: tdd-guard lint — ${found}. ` +
+        `The JS parser cannot evaluate python, so ${outcome}. ` +
+        "Python test quality is enforced by mutmut via `tdd-guard mutate`.");
+}
+/**
+ * The loud SKIPPED-PY line: the python mirror of the SKIPPED-RUST line. Names
+ * the command and the reason (the JS parser cannot evaluate python), lists
+ * any discovered python test files, and states the outcome. In python-only
+ * scans the run exits 0 with no checks — neither failing nor passing
+ * vacuously; in mixed scans the JS files were evaluated normally and only
+ * the python skip is noted.
+ */

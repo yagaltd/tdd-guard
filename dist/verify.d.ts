@@ -5,6 +5,16 @@ import type { VerifyOptions, VerifyResult } from "./types.js";
  * module paths (`crate::mod::test`), so matching anchors a bare selector
  * on `::` as a suffix — never a bare prefix or substring.
  */
+/**
+ * @cc [label:verify] selector-content-match-word-anchored
+ * The test-content leg of JS selector resolution matches whole identifiers,
+ * never substrings: the selector is regex-escaped (identifier-shaped
+ * selectors make escaping deterministic) and anchored on word boundaries at
+ * both ends, so a selector that is a prefix of a longer test name (e.g.
+ * test_my_pin against content containing only test_my_pin_extended) does not
+ * resolve. The exact-name leg and the cargo-listing `::`-suffix leg are
+ * unchanged.
+ */
 export declare function verify(options: VerifyOptions): VerifyResult;
 /**
  * Resolve a cargo project's test inventory: run `cargo test --quiet -- --list`
