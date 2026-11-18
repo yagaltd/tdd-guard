@@ -8,13 +8,20 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { globSync } from "glob";
 import type { MutateOptions, MutateResult } from "./types.js";
+import { discoverTests } from "./discovery.js";
 import { loadConfig } from "./config.js";
 
 export function mutate(options: MutateOptions): MutateResult {
   const config = loadConfig(options.config);
   const threshold = options.threshold || config.mutation?.threshold || 60;
-  const srcDir = resolve(options.src || "src");
-  const testDir = resolve(options.tests || "tests");
+  // Shared discovery: explicit --tests wins; otherwise probe tests/, then
+  // test/, then src-colocated. Zero files throws (CLI exits non-zero) —
+  // mutating a scan that saw no tests proves nothing.
+  const { srcDir, testDir } = discoverTests({
+    src: options.src,
+    tests: options.tests,
+    command: "mutate",
+  });
 
   // Detect project language
   const language = detectLanguage(srcDir);

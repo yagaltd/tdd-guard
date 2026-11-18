@@ -75,7 +75,8 @@ export interface LintOptions {
 }
 export interface MutateOptions {
     src: string;
-    tests: string;
+    /** Omitted → probe tests/, then test/, then src-colocated. */
+    tests?: string;
     threshold: number;
     since: string;
     config: string;
@@ -83,7 +84,9 @@ export interface MutateOptions {
 }
 export interface VerifyOptions {
     spec: string;
-    tests: string;
+    /** Omitted → probe tests/, then test/, then src-colocated. */
+    tests?: string;
+    src?: string;
     config: string;
     format: "json" | "text";
 }

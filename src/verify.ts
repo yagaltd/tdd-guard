@@ -3,9 +3,9 @@
  * Reads an agent-spec contract and checks that tests cover
  * the contract's decisions, boundaries, and test selectors
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
-import { globSync } from "glob";
 import type {
   BoundaryCoverage,
   DecisionCoverage,
@@ -13,13 +13,13 @@ import type {
   VerifyOptions,
   VerifyResult,
 } from "./types.js";
+import { discoverTests } from "./discovery.js";
 import { loadConfig } from "./config.js";
 import { parseFile } from "./parser.js";
 
 export function verify(options: VerifyOptions): VerifyResult {
   const config = loadConfig(options.config);
   const specPath = resolve(options.spec);
-  const testDir = resolve(options.tests || "tests");
 
   if (!existsSync(specPath)) {
     process.stderr.write(`Error: spec file not found: ${specPath}\n`);
@@ -33,27 +33,21 @@ export function verify(options: VerifyOptions): VerifyResult {
   const boundaries = parseBoundaries(specContent);
   const scenarios = parseScenarios(specContent);
 
-  // Collect test files
-  const testPatterns = [
-    "**/*.{test,spec}.{ts,tsx,js,jsx}",
-    "**/tests/**/*.rs",
-    "**/test_*.py",
-    "**/*_test.py",
-  ];
-  const testFiles = testPatterns.flatMap((p) =>
-    globSync(p, { cwd: testDir, absolute: true })
-      .filter((f) => !f.includes("node_modules")),
-  );
-
-  // Also check colocated tests
-  const srcDir = resolve(options.tests ? "../src" : "src");
-  if (existsSync(srcDir)) {
-    const colocated = testPatterns.flatMap((p) =>
-      globSync(p, { cwd: srcDir, absolute: true })
-        .filter((f) => !f.includes("node_modules")),
-    );
-    testFiles.push(...colocated);
-  }
+  // Rust binding: when the target repo is a cargo project, spec selectors
+  // resolve through the runner's own inventory (see cargoTestSelectors). Its
+  // JS file scan may legitimately be empty, so the loud zero-files guard
+  // yields there — a missing Rust selector still fails the run via its
+  // not-found verdict.
+  const isCargoProject = existsSync(resolve("Cargo.toml"));
+  const { testFiles } = discoverTests({
+    src: options.src,
+    tests: options.tests,
+    allowEmpty: isCargoProject,
+    command: "verify",
+  });
+  const rustSelectors = isCargoProject
+    ? cargoTestSelectors(process.cwd())
+    : new Set<string>();
 
   // Build a lookup of all test function names
   const testNames = new Map<string, string>(); // name → file
@@ -103,7 +97,10 @@ export function verify(options: VerifyOptions): VerifyResult {
 
   // Check test selectors
   const testSelectors: TestSelectorCoverage[] = scenarios.map((s) => {
-    const found = testNames.has(s.selector) || allTestContent.includes(s.selector);
+    const found =
+      testNames.has(s.selector) ||
+      allTestContent.includes(s.selector) ||
+      rustSelectors.has(s.selector);
     return {
       scenario: s.name,
       selector: s.selector,
@@ -245,4 +242,48 @@ function findTestForKeywords(
   }
 
   return null;
+}
+
+/**
+ * Resolve a cargo project's test inventory: run `cargo test --quiet -- --list`
+ * and parse the listing into the selector set.
+ *
+ * In a cargo project (Cargo.toml present), verify resolves spec selectors via
+ * `cargo test --quiet -- --list` — the runner's own inventory — not JS parsing
+ * of Rust sources. A selector absent from the listing reports not-found and
+ * fails the run; a cargo failure yields an empty set (all Rust selectors
+ * report not-found), keeping the exit loud. JS resolution is unchanged.
+ */
+export function cargoTestSelectors(cargoRoot: string): Set<string> {
+  try {
+    const listing = execFileSync("cargo", ["test", "--quiet", "--", "--list"], {
+      cwd: cargoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 60_000,
+    }).toString();
+    return new Set(parseCargoTestListing(listing));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    process.stderr.write(
+      `tdd-guard verify: cargo test --list failed (${detail}); ` +
+      "Rust selectors will report not-found.\n",
+    );
+    return new Set();
+  }
+}
+
+/**
+ * Parse a libtest `--list` output into test selector names.
+ *
+ * Terse format (with --quiet): one `name: test` line per test. Default format
+ * adds blank lines and libtest summary lines (`2 tests, 0 benchmarks`) —
+ * only `name: test` lines become selectors.
+ */
+export function parseCargoTestListing(listing: string): string[] {
+  const names: string[] = [];
+  for (const line of listing.split("\n")) {
+    const match = line.trimEnd().match(/^(.+): test$/);
+    if (match) names.push(match[1].trim());
+  }
+  return names;
 }
