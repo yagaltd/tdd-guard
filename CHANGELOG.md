@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.7 — wrapper idioms unwrap, cli version derives from package.json
+
+### The defects
+
+- **Conditional test-wrapper idioms misread as assertionless tests.**
+  `test.skipIf(cond)("name", fn)`, `test.runIf(...)`, `test.each(...)` and
+  friends wrap a test in two calls: the parser classified the inner wrapper
+  invocation, which carries no name and no body, and every wrapped test
+  surfaced as an anonymous assertionless block. pi-workflows' requireLiveState
+  pattern produced 11 false positives on its real suite — all wrapped bodies
+  carried full assertions.
+- **The CLI version string kept drifting from the package.** Third
+  occurrence: `.version("0.1.4")`, then `.version("0.1.5")` against a 0.1.6
+  package.json. A hardcoded literal cannot track a bump.
+
+### Fix
+
+- **Parser unwraps the wrapper chain.** At extraction, member-call chains on
+  the test identifier (skipIf, runIf, each, fails, including multi-step and
+  tagged-template forms) resolve to the inner test call: the extracted block
+  carries the real name and body. The wrapper invocation itself never yields
+  a block. What counts as an assertion is unchanged — a genuinely empty body
+  inside the idiom is still flagged by no-assertionless-tests (pinned).
+- **--version derives from package.json at runtime.** cli.ts reads
+  package.json at startup (readFileSync + JSON.parse) and hands the version
+  to commander — no hardcoded literal remains, so the string tracks every
+  future bump automatically.
+
 ## 0.1.6 — python repos classified, selector match anchored, lock version truthful
 
 ### The defects

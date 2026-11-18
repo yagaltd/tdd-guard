@@ -1,6 +1,6 @@
 {
   "name": "tdd-guard",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Test quality enforcement CLI \u2014 static analysis, agent-spec bridge, mutation testing wrapper",
   "license": "MIT",
   "type": "module",

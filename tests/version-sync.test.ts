@@ -17,7 +17,7 @@ describe("version sync (task 1)", () => {
       packages: { "": { version: string } };
     };
 
-    expect(pkg.version).toBe("0.1.6");
+    expect(pkg.version).toBe("0.1.7");
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[""].version).toBe(pkg.version);
   });

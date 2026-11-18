@@ -12,6 +12,13 @@ const traverse = ("default" in traverseModule.default
     : traverseModule.default);
 const TS_AST_PARSER = AcornParser.extend(tsPlugin());
 /**
+ * Curried wrapper methods: `<test>.<method>(...)` RETURNS the function that
+ * actually receives (name, fn) — the real test call is the outer one
+ * (`test.skipIf(cond)("name", fn)`). The wrapper invocation itself carries
+ * no name or body and must never yield a test block.
+ */
+const CURRIED_WRAPPER_METHODS = new Set(["skipIf", "runIf", "each", "fails"]);
+/**
  * node:assert (strict + legacy), node:test context, and tap assertion methods.
  * A call of the form `<identifier>.<method>(...)` with one of these method names
  * counts as an assertion (e.g. assert.ok, assert.deepStrictEqual, t.match).
@@ -168,6 +175,16 @@ function classifyTestCall(call) {
         }
         return null;
     }
+    if (callee.type === "CallExpression" || callee.type === "TaggedTemplateExpression") {
+        const unwrapped = unwrapCurriedTestCallee(callee);
+        if (!unwrapped)
+            return null;
+        return {
+            name: extractTestName(call),
+            skipped: unwrapped.skipped || optionsIndicateSkip(call),
+            type: unwrapped.type,
+        };
+    }
     if (callee.type === "MemberExpression") {
         const member = callee;
         if (member.computed)
@@ -186,6 +203,12 @@ function classifyTestCall(call) {
             type = "describe";
         else
             return null;
+        // The inner wrapper invocation (`test.skipIf(cond)` of the outer
+        // `test.skipIf(cond)("name", fn)`) carries no name or body. Without this
+        // guard it extracts as an anonymous assertionless phantom block.
+        if (CURRIED_WRAPPER_METHODS.has(propName) && findTestFn(call.arguments) === null) {
+            return null;
+        }
         const skipped = propName === "skip" || propName === "todo";
         return {
             name: extractTestName(call),
@@ -194,6 +217,78 @@ function classifyTestCall(call) {
         };
     }
     return null;
+}
+/**
+ * @cc [label:parser] wrapper-idiom-unwrap
+ * Curried wrapper calls on the test identifier — test.skipIf(c)(...),
+ * test.runIf(...), test.each(...)(...), test.fails(...) and multi-step
+ * chains (test.skipIf(c).each(t)(...), including each-as-tagged-template) —
+ * resolve to the inner test call: the extracted block carries the OUTER
+ * call's name and body, and the wrapper invocation itself never yields a
+ * block. Only known wrapper methods may appear in the chain, so arbitrary
+ * curried calls (foo()(...) ) stay unclassified.
+ */
+function unwrapCurriedTestCallee(callee) {
+    const props = [];
+    let node = callee;
+    let descended = true;
+    while (descended) {
+        descended = false;
+        while (node.type === "CallExpression") {
+            const call = node;
+            if (call.callee.type !== "MemberExpression")
+                return null;
+            const member = call.callee;
+            if (member.computed || member.property.type !== "Identifier")
+                return null;
+            props.push(member.property.name);
+            node = member.object;
+            descended = true;
+        }
+        // `test.each\`table\`(...)` — each is also invokable as a tagged template.
+        if (node.type === "TaggedTemplateExpression") {
+            const tag = node.tag;
+            if (tag.type !== "MemberExpression")
+                return null;
+            const member = tag;
+            if (member.computed || member.property.type !== "Identifier")
+                return null;
+            props.push(member.property.name);
+            node = member.object;
+            descended = true;
+        }
+    }
+    if (node.type !== "Identifier")
+        return null;
+    for (const prop of props) {
+        if (!CURRIED_WRAPPER_METHODS.has(prop))
+            return null;
+    }
+    const objName = node.name;
+    let type = null;
+    let skipped = false;
+    if (objName === "test" || objName === "specify")
+        type = "test";
+    else if (objName === "it")
+        type = "it";
+    else if (objName === "describe")
+        type = "describe";
+    else if (objName === "xtest") {
+        type = "test";
+        skipped = true;
+    }
+    else if (objName === "xit") {
+        type = "it";
+        skipped = true;
+    }
+    else if (objName === "xdescribe") {
+        type = "describe";
+        skipped = true;
+    }
+    else {
+        return null;
+    }
+    return { type, skipped: skipped || props.includes("skip") };
 }
 /**
  * String-literal value in either AST flavor: acorn uses `Literal`,
