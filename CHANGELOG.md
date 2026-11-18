@@ -1,3 +1,13 @@
+## 0.1.8 — discovery widening + word-anchored selectors were its enabler (plan 074 row 4)
+
+- Discovery widens: rust files at any depth (`**/*.rs`) are discovered, and
+  when the probed roots (tests/, test/, src/) do not exist, the working
+  directory itself becomes the scan root — non-cargo rust-shaped projects now
+  classify SKIPPED-RUST instead of loud-failing 0-files.
+- verify: rust files never feed the content leg (a rust file mentioning a
+  selector name in a comment must not count as its definition); cargo repos
+  resolve via the listing, non-cargo rust resolves loud not-found.
+- 0.1.8 (package.json + lock both fields; cli --version derives at runtime).
 # Changelog
 
 ## 0.1.7 — wrapper idioms unwrap, cli version derives from package.json

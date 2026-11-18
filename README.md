@@ -183,6 +183,8 @@ tdd-guard lint --allow-empty
 
 #### Rust repositories — the SKIPPED-RUST classification
 
+Discovery note: the scan widens when the probed roots (tests/, test/, src/) do not exist — the working directory itself becomes the scan root, and rust files at any depth (`**/*.rs`) are discovered and classified SKIPPED-RUST, including in non-cargo rust-shaped projects. Verify never resolves rust selectors from file content: cargo repos resolve via the listing; non-cargo rust repos resolve loud not-found.
+
 `lint` is a JavaScript/TypeScript analyzer. When a scan discovers only Rust test files — every discovered test file ends in `.rs`, or the repo has a `Cargo.toml` and no JS-parseable test files were found — the run neither fails nor reports a vacuous pass. It prints a loud `SKIPPED-RUST` line to stderr naming the command and the reason (the JS parser cannot evaluate rust) and exits `0` with no rule checks:
 
 ```text

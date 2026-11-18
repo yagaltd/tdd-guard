@@ -75,7 +75,12 @@ export function verify(options: VerifyOptions): VerifyResult {
   }
 
   // Also scan test file contents for function references
+  // Rust files never feed the content leg: a cargo repo resolves via the
+  // listing (the inventory of record), and a rust file mentioning a selector
+  // name in a comment must not count as its definition. Rust content is
+  // excluded here; non-cargo rust repos resolve loud not-found.
   const allTestContent = testFiles
+    .filter((f) => !f.endsWith(".rs"))
     .map((f) => {
       try {
         return readFileSync(f, "utf-8");

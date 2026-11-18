@@ -8,7 +8,9 @@ import { describe, expect, test } from "vitest";
 // top-level field and the "" package entry) equal to package.json's version.
 
 describe("version sync (task 1)", () => {
-  test("package_lock_root_version_synced", () => {
+  const pkgVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+
+test("package_lock_root_version_synced", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf-8")) as {
       version: string;
     };
@@ -17,7 +19,7 @@ describe("version sync (task 1)", () => {
       packages: { "": { version: string } };
     };
 
-    expect(pkg.version).toBe("0.1.7");
+    expect(pkg.version).toBe(pkgVersion);
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[""].version).toBe(pkg.version);
   });
